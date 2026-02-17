@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dining Delights</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: url('https://images.unsplash.com/photo-1600891964599-f61ba0e24092?auto=format&fit=crop&w=1400&q=80')
+                        no-repeat center center/cover;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            color: white;
+            text-shadow: 1px 1px 4px rgba(0,0,0,0.7);
+        }
+
+        header {
+            background: rgba(0, 0, 0, 0.5);
+            padding: 20px;
+            text-align: center;
+            font-size: 32px;
+            font-weight: bold;
+        }
+
+        .form-container {
+            text-align: center;
+            margin-top: 50px;
+        }
+
+        input {
+            padding: 12px;
+            margin: 10px;
+            width: 250px;
+            max-width: 80%;
+            border-radius: 5px;
+            border: none;
+            font-size: 16px;
+        }
+
+        .btn {
+            padding: 12px 25px;
+            border: none;
+            border-radius: 5px;
+            background-color: #ffcc00;
+            color: black;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        .btn:hover {
+            background-color: #e6b800;
+        }
+
+        .footer-description {
+            background: rgba(0, 0, 0, 0.6);
+            padding: 20px;
+            font-size: 18px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <header>Dining Delights</header>
+
+    <div class="form-container">
+        <h2>Enter your details</h2>
+        <form>
+            <input type="text" placeholder="Enter your Name" required><br>
+            <input type="email" placeholder="Enter your Email ID" required><br>
+            <button class="btn" type="submit">Next</button>
+        </form>
+    </div>
+
+    <div class="footer-description">
+        Welcome to Dining Delights — where taste meets elegance. Enjoy a curated selection of the finest
+        dishes crafted with passion and served with love.
+    </div>
+
+</body>
+</html>
