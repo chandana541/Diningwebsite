@@ -1,0 +1,948 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Dining Delights — Full (Admin + Payments + Firebase + Invoice)</title>
+
+<!-- Fonts -->
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+
+<!-- jsPDF for invoice generation -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<!-- Razorpay checkout (used if you provide a key) -->
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+
+<!-- Firebase SDKs (optional — uncomment/enable by adding your config below) -->
+<script src="https://www.gstatic.com/firebasejs/9.24.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.24.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.24.0/firebase-auth-compat.js"></script>
+
+<style>
+:root{
+  --burgundy:#6f1d1b;--cream:#f6efe8;--gold:#c79b4b;--card:#fff6f4;--muted:#6b5b53;--shadow:0 8px 28px rgba(17,17,17,0.08);
+}
+*{box-sizing:border-box;margin:0;padding:0;font-family:Inter,system-ui;}
+body{background:var(--cream);color:#332a27;line-height:1.45;}
+header{background:var(--burgundy);color:var(--cream);padding:16px;display:flex;justify-content:space-between;align-items:center;}
+.brand{display:flex;gap:12px;align-items:center;}
+.logo{width:52px;height:52px;border-radius:10px;background:linear-gradient(135deg,var(--gold),#b06f4b);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;box-shadow:var(--shadow);}
+.nav{display:flex;gap:10px;align-items:center;}
+.nav a{color:var(--cream);text-decoration:none;font-weight:600;}
+.cta{background:var(--gold);color:var(--burgundy);border:none;padding:8px 12px;border-radius:8px;cursor:pointer;font-weight:700;}
+.container{max-width:1100px;margin:28px auto;padding:0 18px;}
+.grid-2{display:grid;grid-template-columns:1fr 420px;gap:20px;}
+.card{background:var(--card);padding:14px;border-radius:12px;box-shadow:var(--shadow);}
+.menu-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin-top:12px;}
+.menu-card{background:white;border-radius:10px;overflow:hidden;display:flex;flex-direction:column;}
+.menu-card img{width:100%;height:160px;object-fit:cover;transition:transform .25s;}
+.menu-card:hover img{transform:scale(1.03);}
+.meta{padding:12px;display:flex;justify-content:space-between;align-items:center;}
+.price{font-weight:700;color:var(--burgundy);}
+.form-row{display:flex;flex-direction:column;margin-bottom:10px;}
+.small-muted{font-size:13px;color:var(--muted);}
+.events{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;}
+.reviews-list{display:flex;flex-direction:column;gap:10px;margin-top:12px;}
+.review{background:white;padding:12px;border-radius:8px;box-shadow:0 6px 22px rgba(0,0,0,0.04);}
+.admin-modal{position:fixed;inset:0;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;z-index:60;display:none;}
+.admin-panel{width:92%;max-width:980px;background:white;border-radius:12px;padding:16px;box-shadow:0 10px 40px rgba(0,0,0,0.25);max-height:86vh;overflow:auto;}
+.tabs{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;}
+.tab{padding:8px 12px;border-radius:8px;background:#f4f0ed;cursor:pointer;}
+.tab.active{background:var(--burgundy);color:var(--cream);font-weight:700;}
+.table{width:100%;border-collapse:collapse;margin-top:8px;}
+.table th,.table td{border-bottom:1px solid #eee;padding:8px;text-align:left;font-size:14px;}
+@media(max-width:980px){.grid-2{grid-template-columns:1fr;}header{flex-direction:column;align-items:flex-start;gap:12px;}}
+/* small helpers */
+.btn-ghost{background:#eee;border:none;border-radius:8px;padding:8px 10px;cursor:pointer;}
+.wabtn{display:inline-block;padding:8px 10px;border-radius:8px;background:#25D366;color:white;text-decoration:none;font-weight:700;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="logo">DD</div>
+    <div>
+      <div style="font-family:Playfair Display,serif;font-size:18px;">Dining Delights</div>
+      <div style="font-size:12px;color:#ffe">Fine dining • Warm ambience</div>
+    </div>
+  </div>
+
+  <nav class="nav">
+    <a href="#home" onclick="scrollTo('home')">Home</a>
+    <a href="#menu" onclick="scrollTo('menu')">Menu</a>
+    <a href="#reserve" onclick="scrollTo('reserve')">Reserve</a>
+    <a href="#takeaway" onclick="scrollTo('takeaway')">Takeaway</a>
+    <a href="#events" onclick="scrollTo('events')">Events</a>
+    <a href="#reviews" onclick="scrollTo('reviews')">Reviews</a>
+    <button class="cta" onclick="openAdminLogin()">Admin</button>
+  </nav>
+</header>
+
+<!-- INTRO -->
+<div id="introPage" style="height:calc(100vh - 84px);background:url('https://images.unsplash.com/photo-1600891964599-f61ba0e24092?auto=format&fit=crop&w=1400&q=80') center/cover no-repeat;display:flex;flex-direction:column;justify-content:center;align-items:center;color:white;padding:28px;text-shadow:1px 1px 6px rgba(0,0,0,0.6);">
+  <div style="text-align:center;max-width:760px;">
+    <h1 style="font-family:Playfair Display,serif;font-size:44px;margin-bottom:8px;">Dining Delights</h1>
+    <p style="font-size:18px;margin-bottom:18px;">Welcome — enter your details to continue</p>
+    <form onsubmit="goToMain(event)" style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;">
+      <input id="introName" type="text" placeholder="Your name" required style="width:260px;padding:10px;border-radius:8px;border:1px solid #eee;">
+      <input id="introEmail" type="email" placeholder="Email" required style="width:260px;padding:10px;border-radius:8px;border:1px solid #eee;">
+      <button class="cta" style="height:44px;">Enter</button>
+    </form>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div id="mainPage" style="display:none;">
+  <main class="container">
+    <!-- HERO -->
+    <section id="home" class="grid-2">
+      <div class="card">
+        <h2 style="font-family:Playfair Display,serif;color:var(--burgundy)">Welcome to Dining Delights</h2>
+        <p class="small-muted">Contemporary takes on classic flavors — family friendly, romantic evenings, business lunches.</p>
+
+        <h4 style="margin-top:14px;">Signature</h4>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;">
+          <div class="card" style="padding:8px;">Herb-crusted Lamb Chops — ₹1,200</div>
+          <div class="card" style="padding:8px;">Truffle Mushroom Risotto — ₹1,050</div>
+          <div class="card" style="padding:8px;">Dark Chocolate Fondant — ₹850</div>
+        </div>
+      </div>
+
+      <aside class="card">
+        <h4>Quick Reserve</h4>
+        <form id="quickReserveForm" onsubmit="handleQuickReserve(event)">
+          <div class="form-row"><label>Phone</label><input id="qPhone" type="tel" required></div>
+          <div class="form-row"><label>Date</label><input id="qDate" type="date" required></div>
+          <div class="form-row"><label>Time</label><input id="qTime" type="time" required></div>
+          <div class="form-row"><label>Guests</label>
+            <select id="qGuests"><option>1</option><option>2</option><option>3</option><option>4</option><option>5+</option></select>
+          </div>
+          <button class="cta" style="width:100%;">Reserve</button>
+        </form>
+        <div id="qMsg" class="small-muted" style="margin-top:8px;"></div>
+      </aside>
+    </section>
+
+    <!-- MENU (20 items) -->
+    <section id="menu" style="margin-top:20px;">
+      <h3 style="font-family:Playfair Display,serif;color:var(--burgundy);">Menu</h3>
+      <p class="small-muted">Tap an item to order or add to takeaway cart.</p>
+
+      <div style="margin:12px 0;display:flex;gap:8px;flex-wrap:wrap;">
+        <button onclick="filterMenu('all')" class="tab active" id="tab-all">All</button>
+        <button onclick="filterMenu('starters')" class="tab" id="tab-starters">Starters</button>
+        <button onclick="filterMenu('veg')" class="tab" id="tab-veg">Veg</button>
+        <button onclick="filterMenu('nonveg')" class="tab" id="tab-nonveg">Non-Veg</button>
+        <button onclick="filterMenu('desserts')" class="tab" id="tab-desserts">Desserts</button>
+      </div>
+
+      <div class="menu-grid" id="menuGrid">
+        <!-- STARTERS -->
+        <article class="menu-card" data-cat="starters veg" data-item='{"title":"Paneer Tikka","price":320}'>
+          <img src="https://recipes.net/wp-content/uploads/2024/01/how-to-grill-paneer-tikka-on-gas-1705309872.jpg" alt="Paneer Tikka">
+          <div class="meta"><strong>Paneer Tikka</strong><span class="price">₹320</span></div>
+          <div style="padding:0 12px 12px;color:var(--muted);font-size:14px;">Char-grilled paneer, spices, mint chutney.</div>
+          <div style="padding:0 12px 12px;"><button onclick="addToCartFromCard(event,this)">Add to Cart</button>
+            <a class="wabtn" href="#" onclick="whatsappOrder(event,'Paneer Tikka',320)">WhatsApp</a>
+          </div>
+        </article>
+
+        <article class="menu-card" data-cat="starters veg" data-item='{"title":"Veg Soup","price":210}'>
+          <img src="https://www.cookingclassy.com/wp-content/uploads/2014/10/vegetable-soup-7.jpg" alt="Veg Soup">
+          <div class="meta"><strong>Veg Soup</strong><span class="price">₹210</span></div>
+          <div style="padding:0 12px 12px;color:var(--muted)">Comforting seasonal vegetable broth.</div>
+          <div style="padding:0 12px 12px;"><button onclick="addToCartFromCard(event,this)">Add to Cart</button>
+            <a class="wabtn" href="#" onclick="whatsappOrder(event,'Veg Soup',210)">WhatsApp</a>
+          </div>
+        </article>
+
+        <article class="menu-card" data-cat="starters nonveg" data-item='{"title":"Chicken Lollipop","price":380}'>
+          <img src="https://global-uploads.webflow.com/60d34b8627f6e735cf28df18/62a95eaacb8d206406f1d296_Chicken%20Lollipop%20Hero%204.3.jpg" alt="Chicken Lollipop">
+          <div class="meta"><strong>Chicken Lollipop</strong><span class="price">₹380</span></div>
+          <div style="padding:0 12px 12px;color:var(--muted)">Spiced fried chicken drumettes.</div>
+          <div style="padding:0 12px 12px;"><button onclick="addToCartFromCard(event,this)">Add to Cart</button>
+            <a class="wabtn" href="#" onclick="whatsappOrder(event,'Chicken Lollipop',380)">WhatsApp</a>
+          </div>
+        </article>
+
+        <article class="menu-card" data-cat="starters veg" data-item='{"title":"Spring Rolls","price":240}'>
+          <img src="https://redhousespice.com/wp-content/uploads/2021/12/whole-spring-rolls-and-halved-ones-scaled.jpg" alt="Spring Rolls">
+          <div class="meta"><strong>Spring Rolls</strong><span class="price">₹240</span></div>
+          <div style="padding:0 12px 12px;color:var(--muted)">Crispy veg rolls with sweet chili dip.</div>
+          <div style="padding:0 12px 12px;"><button onclick="addToCartFromCard(event,this)">Add to Cart</button>
+            <a class="wabtn" href="#" onclick="whatsappOrder(event,'Spring Rolls',240)">WhatsApp</a>
+          </div>
+        </article>
+
+        <article class="menu-card" data-cat="starters nonveg" data-item='{"title":"Fish Fry","price":410}'>
+          <img src="https://i.pinimg.com/736x/55/d2/e2/55d2e20b51b999decf2c35dbda69574a.jpg" alt="Fish Fry">
+          <div class="meta"><strong>Fish Fry</strong><span class="price">₹410</span></div>
+          <div style="padding:0 12px 12px;color:var(--muted)">Crispy spiced fish, lemon wedge.</div>
+          <div style="padding:0 12px 12px;"><button onclick="addToCartFromCard(event,this)">Add to Cart</button>
+            <a class="wabtn" href="#" onclick="whatsappOrder(event,'Fish Fry',410)">WhatsApp</a>
+          </div>
+        </article>
+
+        <!-- VEG MAINS -->
+        <article class="menu-card" data-cat="veg main" data-item='{"title":"Paneer Butter Masala","price":450}'>
+          <img src="https://www.cubesnjuliennes.com/wp-content/uploads/2019/11/Paneer-Butter-Masala-Recipe-1.jpg" alt="Paneer Butter Masala">
+          <div class="meta"><strong>Paneer Butter Masala</strong><span class="price">₹450</span></div>
+          <div style="padding:0 12px 12px;color:var(--muted)">Rich tomato-cashew gravy and butter.</div>
+          <div style="padding:0 12px 12px;"><button onclick="addToCartFromCard(event,this)">Add to Cart</button>
+            <a class="wabtn" href="#" onclick="whatsappOrder(event,'Paneer Butter Masala',450)">WhatsApp</a>
+          </div>
+        </article>
+
+        <article class="menu-card" data-cat="veg main" data-item='{"title":"Veg Biryani","price":350}'>
+          <img src="https://thediningdelight.com/wp-content/uploads/2024/06/vegetable-Biryani.jpg" alt="Veg Biryani">
+          <div class="meta"><strong>Veg Biryani</strong><span class="price">₹350</span></div>
+          <div style="padding:0 12px 12px;color:var(--muted)">Fragrant basmati with seasonal vegetables.</div>
+          <div style="padding:0 12px 12px;"><button onclick="addToCartFromCard(event,this)">Add to Cart</button>
+            <a class="wabtn" href="#" onclick="whatsappOrder(event,'Veg Biryani',350)">WhatsApp</a>
+          </div>
+        </article>
+
+        <article class="menu-card" data-cat="veg main" data-item='{"title":"Dal Tadka","price":280}'>
+          <img src="https://www.scrumptiously.com/wp-content/uploads/2024/10/MoongDalTadka.webp" alt="Dal Tadka">
+          <div class="meta"><strong>Dal Tadka</strong><span class="price">₹280</span></div>
+          <div style="padding:0 12px 12px;color:var(--muted)">Yellow lentils tempered with spices.</div>
+          <div style="padding:0 12px 12px;"><button onclick="addToCartFromCard(event,this)">Add to Cart</button>
+            <a class="wabtn" href="#" onclick="whatsappOrder(event,'Dal Tadka',280)">WhatsApp</a>
+          </div>
+        </article>
+
+        <article class="menu-card" data-cat="veg main" data-item='{"title":"Veg Fried Rice","price":260}'>
+          <img src="https://wallpaperaccess.com/full/2175404.jpg" alt="Veg Fried Rice">
+          <div class="meta"><strong>Veg Fried Rice</strong><span class="price">₹260</span></div>
+          <div style="padding:0 12px 12px;color:var(--muted)">Wok-tossed rice with veggies & soy.</div>
+          <div style="padding:0 12px 12px;"><button onclick="addToCartFromCard(event,this)">Add to Cart</button>
+            <a class="wabtn" href="#" onclick="whatsappOrder(event,'Veg Fried Rice',260)">WhatsApp</a>
+          </div>
+        </article>
+
+        <article class="menu-card" data-cat="veg main" data-item='{"title":"Butter Naan","price":60}'>
+          <img src="https://wallpaperaccess.com/full/9195366.jpg" alt="Butter Naan">
+          <div class="meta"><strong>Butter Naan</strong><span class="price">₹60</span></div>
+          <div style="padding:0 12px 12px;color:var(--muted)">Soft tandoori flatbread.</div>
+          <div style="padding:0 12px 12px;"><button onclick="addToCartFromCard(event,this)">Add to Cart</button>
+            <a class="wabtn" href="#" onclick="whatsappOrder(event,'Butter Naan',60)">WhatsApp</a>
+          </div>
+        </article>
+
+        <!-- NON-VEG MAINS -->
+        <article class="menu-card" data-cat="nonveg main" data-item='{"title":"Chicken Biryani","price":420}'>
+          <img src="https://images.unsplash.com/photo-1630851840633-f96999247032?auto=format&fit=crop&w=1200&q=80" alt="Chicken Biryani">
+          <div class="meta"><strong>Chicken Biryani</strong><span class="price">₹420</span></div>
+          <div style="padding:0 12px 12px;color:var(--muted)">Layered biryani with aromatic spices.</div>
+          <div style="padding:0 12px 12px;"><button onclick="addToCartFromCard(event,this)">Add to Cart</button>
+            <a class="wabtn" href="#" onclick="whatsappOrder(event,'Chicken Biryani',420)">WhatsApp</a>
+          </div>
+        </article>
+
+        <article class="menu-card" data-cat="nonveg main" data-item='{"title":"Chicken Curry","price":390}'>
+          <img src="https://feastwithsafiya.com/wp-content/uploads/2022/03/chicken-curry-recipe.jpg" alt="Chicken Curry">
+          <div class="meta"><strong>Chicken Curry</strong><span class="price">₹390</span></div>
+          <div style="padding:0 12px 12px;color:var(--muted)">Classic home-style curry.</div>
+          <div style="padding:0 12px 12px;"><button onclick="addToCartFromCard(event,this)">Add to Cart</button>
+            <a class="wabtn" href="#" onclick="whatsappOrder(event,'Chicken Curry',390)">WhatsApp</a>
+          </div>
+        </article>
+
+        <article class="menu-card" data-cat="nonveg main" data-item='{"title":"Fish Curry","price":440}'>
+          <img src="https://www.licious.in/blog/wp-content/uploads/2022/03/shutterstock_1891229335-min.jpg" alt="Fish Curry">
+          <div class="meta"><strong>Fish Curry</strong><span class="price">₹440</span></div>
+          <div style="padding:0 12px 12px;color:var(--muted)">Tangy coastal-style fish curry.</div>
+          <div style="padding:0 12px 12px;"><button onclick="addToCartFromCard(event,this)">Add to Cart</button>
+            <a class="wabtn" href="#" onclick="whatsappOrder(event,'Fish Curry',440)">WhatsApp</a>
+          </div>
+        </article>
+
+        <article class="menu-card" data-cat="nonveg main" data-item='{"title":"Mutton Curry","price":480}'>
+          <img src="https://www.licious.in/blog/wp-content/uploads/2023/02/shutterstock_2205168763.jpg" alt="Mutton Curry">
+          <div class="meta"><strong>Mutton Curry</strong><span class="price">₹480</span></div>
+          <div style="padding:0 12px 12px;color:var(--muted)">Slow-cooked mutton with spices.</div>
+          <div style="padding:0 12px 12px;"><button onclick="addToCartFromCard(event,this)">Add to Cart</button>
+            <a class="wabtn" href="#" onclick="whatsappOrder(event,'Mutton Curry',480)">WhatsApp</a>
+          </div>
+        </article>
+
+        <article class="menu-card" data-cat="nonveg main" data-item='{"title":"Grilled Chicken","price":410}'>
+          <img src="https://hips.hearstapps.com/hmg-prod/images/grilled-chicken-horizontal-1532030541.jpg" alt="Grilled Chicken">
+          <div class="meta"><strong>Grilled Chicken</strong><span class="price">₹410</span></div>
+          <div style="padding:0 12px 12px;color:var(--muted)">Herb-marinated grilled chicken.</div>
+          <div style="padding:0 12px 12px;"><button onclick="addToCartFromCard(event,this)">Add to Cart</button>
+            <a class="wabtn" href="#" onclick="whatsappOrder(event,'Grilled Chicken',410)">WhatsApp</a>
+          </div>
+        </article>
+
+        <!-- DESSERTS -->
+        <article class="menu-card" data-cat="desserts" data-item='{"title":"Chocolate Lava","price":180}'>
+          <img src="https://images.unsplash.com/photo-1578985545062-69928b1d9587?auto=format&fit=crop&w=1200&q=80" alt="Chocolate Lava">
+          <div class="meta"><strong>Chocolate Lava</strong><span class="price">₹180</span></div>
+          <div style="padding:0 12px 12px;color:var(--muted)">Warm molten chocolate cake.</div>
+          <div style="padding:0 12px 12px;"><button onclick="addToCartFromCard(event,this)">Add to Cart</button>
+            <a class="wabtn" href="#" onclick="whatsappOrder(event,'Chocolate Lava',180)">WhatsApp</a>
+          </div>
+        </article>
+
+        <article class="menu-card" data-cat="desserts" data-item='{"title":"Gulab Jamun","price":120}'>
+          <img src="https://www.funfoodfrolic.com/wp-content/uploads/2020/07/Gulab-Jamun-Thumbnail.jpg" alt="Gulab Jamun">
+          <div class="meta"><strong>Gulab Jamun</strong><span class="price">₹120</span></div>
+          <div style="padding:0 12px 12px;color:var(--muted)">Classic syrup-soaked sweets.</div>
+          <div style="padding:0 12px 12px;"><button onclick="addToCartFromCard(event,this)">Add to Cart</button>
+            <a class="wabtn" href="#" onclick="whatsappOrder(event,'Gulab Jamun',120)">WhatsApp</a>
+          </div>
+        </article>
+
+        <article class="menu-card" data-cat="desserts" data-item='{"title":"Fruit Tart","price":200}'>
+          <img src="https://images.unsplash.com/photo-1505253758473-96b7015fcd40?auto=format&fit=crop&w=1200&q=80" alt="Fruit Tart">
+          <div class="meta"><strong>Fruit Tart</strong><span class="price">₹200</span></div>
+          <div style="padding:0 12px 12px;color:var(--muted)">Pastry cream & seasonal fruits.</div>
+          <div style="padding:0 12px 12px;"><button onclick="addToCartFromCard(event,this)">Add to Cart</button>
+            <a class="wabtn" href="#" onclick="whatsappOrder(event,'Fruit Tart',200)">WhatsApp</a>
+          </div>
+        </article>
+
+        <article class="menu-card" data-cat="desserts" data-item='{"title":"Ice Cream","price":110}'>
+          <img src="https://images.unsplash.com/photo-1497034825429-c343d7c6a68f?auto=format&fit=crop&w=1200&q=80" alt="Ice Cream">
+          <div class="meta"><strong>Ice Cream</strong><span class="price">₹110</span></div>
+          <div style="padding:0 12px 12px;color:var(--muted)">Assorted scoop selection.</div>
+          <div style="padding:0 12px 12px;"><button onclick="addToCartFromCard(event,this)">Add to Cart</button>
+            <a class="wabtn" href="#" onclick="whatsappOrder(event,'Ice Cream',110)">WhatsApp</a>
+          </div>
+        </article>
+
+        <article class="menu-card" data-cat="desserts" data-item='{"title":"Brownie","price":160}'>
+          <img src="https://www.hersheyland.com/content/dam/hersheyland/en-us/recipes/recipe-images/60_Hersheys_Chocolate-OneBowl-Brownies-_11-18.jpeg" alt="Brownie">
+          <div class="meta"><strong>Brownie</strong><span class="price">₹160</span></div>
+          <div style="padding:0 12px 12px;color:var(--muted)">Rich chocolate brownie with nuts.</div>
+          <div style="padding:0 12px 12px;"><button onclick="addToCartFromCard(event,this)">Add to Cart</button>
+            <a class="wabtn" href="#" onclick="whatsappOrder(event,'Brownie',160)">WhatsApp</a>
+          </div>
+        </article>
+
+      </div>
+    </section>
+
+    <!-- RESERVATION (Advanced) -->
+    <section id="reserve" style="margin-top:20px;">
+      <h3 style="font-family:Playfair Display,serif;color:var(--burgundy)">Table Reservation</h3>
+
+      <div class="grid-2" style="margin-top:12px;">
+        <div class="card">
+          <form id="reserveForm" onsubmit="handleReserve(event)">
+            <div class="form-row"><label>Name</label><input id="name" type="text" required></div>
+            <div class="form-row"><label>Phone</label><input id="phone" type="tel" required></div>
+            <div style="display:flex;gap:10px;">
+              <div style="flex:1" class="form-row"><label>Date</label><input id="date" type="date" required></div>
+              <div style="width:140px" class="form-row"><label>Time</label><input id="time" type="time" required></div>
+            </div>
+
+            <div class="form-row"><label>Guests</label>
+              <select id="guests"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6+</option></select>
+            </div>
+
+            <div class="form-row"><label>Food Preference</label>
+              <select id="foodType"><option>Veg</option><option>Non-Veg</option><option>Both</option></select>
+            </div>
+
+            <div class="form-row"><label>Kids Coming?</label>
+              <select id="kids"><option>No</option><option>Yes</option></select>
+            </div>
+
+            <div class="form-row"><label>Occasion</label>
+              <select id="occasion"><option>Normal Dining</option><option>Birthday</option><option>Anniversary</option><option>Business Lunch</option><option>Romantic Dinner</option></select>
+            </div>
+
+            <div class="form-row"><label>Deals / Offers</label>
+              <select id="deals"><option>No Deal</option><option>Birthday Special</option><option>Couple Combo</option><option>Family Pack</option></select>
+            </div>
+
+            <div class="form-row"><label>Requests</label><textarea id="requests" rows="3"></textarea></div>
+
+            <button class="cta">Request Reservation</button>
+          </form>
+
+          <div id="reserveMsg" class="small-muted" style="margin-top:8px;"></div>
+        </div>
+
+        <aside class="card">
+          <h4>Your Upcoming Reservations</h4>
+          <div id="upcomingList" style="display:flex;flex-direction:column;gap:10px;margin-top:10px;"></div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- TAKEAWAY + CART -->
+    <section id="takeaway" style="margin-top:20px;">
+      <h3 style="font-family:Playfair Display,serif;color:var(--burgundy)">Takeaway & Cart</h3>
+      <p class="small-muted">Add items to cart, checkout with Razorpay (demo) or simulate payment.</p>
+
+      <div style="display:flex;gap:16px;flex-wrap:wrap;">
+        <div style="flex:1" class="card">
+          <h4>Cart</h4>
+          <div id="cartList" style="display:flex;flex-direction:column;gap:8px;margin-top:8px;"></div>
+          <div style="margin-top:12px;display:flex;gap:8px;">
+            <button onclick="checkoutWithRazorpay()" class="cta">Pay with Razorpay</button>
+            <button onclick="simulatePayment()" class="btn-ghost">Simulate Payment</button>
+            <button onclick="clearCart()" class="btn-ghost">Clear Cart</button>
+          </div>
+          <div style="margin-top:8px;" id="cartTotal" class="small-muted"></div>
+        </div>
+
+        <div style="width:420px" class="card">
+          <h4>Quick Takeaway Items</h4>
+          <div id="takeawayGrid" class="menu-grid" style="grid-template-columns:1fr;gap:10px;margin-top:8px;">
+            <!-- sample quick items (mirrors some menu items) -->
+            <div style="display:flex;gap:8px;align-items:center;">
+              <img src="https://www.madhuseverydayindian.com/wp-content/uploads/2022/11/easy-vegetable-biryani.jpg" alt="" style="width:80px;height:60px;object-fit:cover;border-radius:8px;">
+              <div style="flex:1"><strong>Veg Biryani</strong><div class="small-muted">₹220</div></div>
+              <div><button onclick="addToCart({title:'Veg Biryani',price:220})">Add</button></div>
+            </div>
+
+            <div style="display:flex;gap:8px;align-items:center;">
+              <img src="https://tse1.mm.bing.net/th/id/OIP.QQNwp5HMwI-mWvP-kP97cgHaHa?pid=Api&P=0&h=180" alt="" style="width:80px;height:60px;object-fit:cover;border-radius:8px;">
+              <div style="flex:1"><strong>Chicken Biryani</strong><div class="small-muted">₹320</div></div>
+              <div><button onclick="addToCart({title:'Chicken Biryani',price:320})">Add</button></div>
+            </div>
+
+            <div style="display:flex;gap:8px;align-items:center;">
+              <img src="https://i0.wp.com/sandhyahariharan.co.uk/wp-content/uploads/2022/10/Paneer-Curry-2.jpg?fit=800%2C1199&ssl=1" alt="" style="width:80px;height:60px;object-fit:cover;border-radius:8px;">
+              <div style="flex:1"><strong>Paneer Curry</strong><div class="small-muted">₹260</div></div>
+              <div><button onclick="addToCart({title:'Paneer Curry',price:260})">Add</button></div>
+            </div>
+
+            <div style="display:flex;gap:8px;align-items:center;">
+              <img src="https://tse4.mm.bing.net/th/id/OIP.XK_N8sxYXB0zwE7PEK9pQQHaJ4?pid=Api&P=0&h=180" alt="" style="width:80px;height:60px;object-fit:cover;border-radius:8px;">
+              <div style="flex:1"><strong>Chicken Curry</strong><div class="small-muted">₹300</div></div>
+              <div><button onclick="addToCart({title:'Chicken Curry',price:300})">Add</button></div>
+            </div>
+
+            <div style="margin-top:12px;">
+              <button onclick="downloadInvoiceDemo()" class="btn-ghost">Download Sample Invoice</button>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- EVENTS -->
+    <section id="events">
+      <h3 style="font-family:Playfair Display,serif;color:var(--burgundy)">Upcoming Events</h3>
+      <div class="events" style="margin-top:8px;">
+        <div class="card"><strong>Dec 18, 2025</strong><div class="small-muted">Winter Wine Pairing — 5-course</div></div>
+        <div class="card"><strong>Jan 12, 2026</strong><div class="small-muted">Chef's Table — seasonal tasting</div></div>
+        <div class="card"><strong>Feb 14, 2026</strong><div class="small-muted">Valentine's Dinner — candlelight</div></div>
+      </div>
+    </section>
+
+    <!-- REVIEWS -->
+    <section id="reviews">
+      <h3 style="font-family:Playfair Display,serif;color:var(--burgundy)">Reviews</h3>
+      <div style="display:grid;grid-template-columns:1fr 320px;gap:18px;margin-top:12px;">
+        <div>
+          <div id="reviewsList" class="reviews-list"></div>
+        </div>
+        <aside class="card">
+          <h4>Leave a Review</h4>
+          <form id="reviewForm" onsubmit="handleReview(event)">
+            <div class="form-row"><label>Name</label><input id="rName" required></div>
+            <div class="form-row"><label>Rating</label>
+              <select id="rRating"><option value="5">★★★★★ (5)</option><option value="4">★★★★ (4)</option><option value="3">★★★ (3)</option></select>
+            </div>
+            <div class="form-row"><label>Message</label><textarea id="rMsg" rows="3" required></textarea></div>
+            <button class="cta">Submit Review</button>
+          </form>
+        </aside>
+      </div>
+    </section>
+
+    <footer style="margin-top:28px;text-align:center;color:var(--muted);">
+      © <span id="year"></span> Dining Delights — All Rights Reserved
+    </footer>
+  </main>
+</div>
+
+<!-- ADMIN MODAL -->
+<div id="adminModal" class="admin-modal">
+  <div class="admin-panel">
+    <div id="adminLoginView">
+      <h3>Admin Login</h3>
+      <p class="small-muted">Enter admin password to access dashboard</p>
+      <div style="max-width:420px;">
+        <div class="form-row"><input id="adminPass" type="password" placeholder="Password"></div>
+        <div style="display:flex;gap:8px;">
+          <button onclick="adminLogin()" class="cta">Login</button>
+          <button onclick="closeAdmin()" class="btn-ghost">Cancel</button>
+        </div>
+        <div id="adminLoginMsg" class="small-muted" style="margin-top:8px;"></div>
+      </div>
+    </div>
+
+    <div id="adminDashView" style="display:none;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <h3>Admin Dashboard</h3>
+        <div>
+          <button onclick="exportAllCSV()">Export All CSV</button>
+          <button onclick="closeAdmin()" class="btn-ghost">Close</button>
+        </div>
+      </div>
+
+      <div class="tabs" style="margin-top:12px;">
+        <div class="tab active" id="resTabBtn" onclick="showTab('reservations')">Reservations</div>
+        <div class="tab" id="takeTabBtn" onclick="showTab('takeaway')">Takeaway</div>
+        <div class="tab" id="revTabBtn" onclick="showTab('reviews')">Reviews</div>
+      </div>
+
+      <div id="adminContent">
+        <div id="tab-reservations">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <strong>Reservations</strong>
+            <div style="display:flex;gap:8px;">
+              <button onclick="exportCSV('dd_reservations','reservations.csv')">Export CSV</button>
+              <button onclick="clearStorageKey('dd_reservations')">Clear All</button>
+            </div>
+          </div>
+          <table class="table" id="reservationsTable"><thead><tr><th>Name</th><th>Date • Time</th><th>Guests</th><th>Occasion</th><th>Food</th><th>Actions</th></tr></thead><tbody></tbody></table>
+        </div>
+
+        <div id="tab-takeaway" style="display:none;">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <strong>Takeaway Orders</strong>
+            <div style="display:flex;gap:8px;">
+              <button onclick="exportCSV('dd_takeaway','takeaway.csv')">Export CSV</button>
+              <button onclick="clearStorageKey('dd_takeaway')">Clear All</button>
+            </div>
+          </div>
+          <table class="table" id="takeawayTable"><thead><tr><th>Item</th><th>Price</th><th>Date</th><th>Actions</th></tr></thead><tbody></tbody></table>
+        </div>
+
+        <div id="tab-reviews" style="display:none;">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <strong>Reviews</strong>
+            <div style="display:flex;gap:8px;">
+              <button onclick="exportCSV('dd_reviews','reviews.csv')">Export CSV</button>
+              <button onclick="clearStorageKey('dd_reviews')">Clear All</button>
+            </div>
+          </div>
+          <table class="table" id="reviewsTable"><thead><tr><th>Name</th><th>Rating</th><th>Message</th><th>Actions</th></tr></thead><tbody></tbody></table>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+/* ----------------- CONFIG SECTION (EDIT HERE) -----------------
+ * 1) To enable Firebase Firestore: paste your firebaseConfig below.
+ *    If left empty, app uses localStorage fallback.
+ *
+ * 2) To enable Razorpay real payments: replace RAZORPAY_KEY_ID with your key.
+ *
+ * 3) Admin password is simple for demo. Change before public use.
+ -----------------------------------------------------------------*/
+
+/* Firebase config: paste your project's config here (optional)
+  Example:
+  const firebaseConfig = {
+    apiKey: "AIza....",
+    authDomain: "your-app.firebaseapp.com",
+    projectId: "your-app",
+    storageBucket: "...",
+    messagingSenderId: "...",
+    appId: "..."
+  };
+*/
+const firebaseConfig = null; // <<-- PASTE YOUR FIREBASE CONFIG OBJECT HERE TO ACTIVATE FIREBASE
+
+// Razorpay key (test or live) - replace to accept real payments
+const RAZORPAY_KEY_ID = "RAZORPAY_KEY_ID"; // <<-- replace with your key or leave as placeholder for demo
+
+// Admin password for client-side admin (change before public use)
+const ADMIN_PASSWORD = 'admin@dd2025';
+
+/* ----------------- END CONFIG ----------------- */
+
+document.getElementById('year').innerText = new Date().getFullYear();
+
+/* Optional Firebase initialization */
+let useFirestore = false;
+let db = null;
+if(firebaseConfig){
+  try{
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.firestore();
+    useFirestore = true;
+    console.log('Firebase enabled.');
+  } catch(err){
+    console.warn('Firebase init error — falling back to localStorage', err);
+    useFirestore = false;
+  }
+}
+
+/* HELPERS */
+function scrollTo(id){ const el=document.getElementById(id); if(el) el.scrollIntoView({behavior:'smooth'}); }
+
+/* ------------------- Intro -> Main ------------------- */
+function goToMain(e){
+  e.preventDefault();
+  const n = document.getElementById('introName').value || 'Guest';
+  const em = document.getElementById('introEmail').value || '';
+  localStorage.setItem('dd_profile', JSON.stringify({name:n,email:em}));
+  document.getElementById('introPage').style.display='none';
+  document.getElementById('mainPage').style.display='block';
+}
+
+/* ------------------- Menu Filter ------------------- */
+function filterMenu(cat){
+  ['all','starters','veg','nonveg','desserts'].forEach(k=>{ const el=document.getElementById('tab-'+k); if(el) el.classList.remove('active'); });
+  const btn = document.getElementById('tab-'+cat); if(btn) btn.classList.add('active');
+  document.querySelectorAll('#menuGrid .menu-card').forEach(card=>{
+    if(cat==='all'){ card.style.display='flex'; return; }
+    const cats = (card.dataset.cat||'').toLowerCase();
+    if(cat==='veg') card.style.display = cats.includes('veg') ? 'flex':'none';
+    else if(cat==='nonveg') card.style.display = cats.includes('nonveg') ? 'flex':'none';
+    else card.style.display = cats.includes(cat) ? 'flex':'none';
+  });
+}
+
+/* ------------------- Cart & Takeaway ------------------- */
+let CART = JSON.parse(localStorage.getItem('dd_cart')||'[]');
+
+function saveCart(){ localStorage.setItem('dd_cart', JSON.stringify(CART)); renderCart(); }
+
+function renderCart(){
+  const list = document.getElementById('cartList'); list.innerHTML='';
+  if(CART.length===0){ list.innerHTML = '<div class="small-muted">Cart is empty.</div>'; document.getElementById('cartTotal').innerText=''; return; }
+  CART.forEach((it, idx)=>{
+    const row = document.createElement('div');
+    row.style.display='flex'; row.style.justifyContent='space-between'; row.style.alignItems='center';
+    row.innerHTML = `<div><strong>${it.title}</strong><div class="small-muted">₹${it.price} x ${it.qty}</div></div>
+      <div style="display:flex;gap:6px;"><button class="btn-ghost" onclick="changeQty(${idx},-1)">-</button><button class="btn-ghost" onclick="changeQty(${idx},1)">+</button><button class="btn-ghost" onclick="removeCart(${idx})">Remove</button></div>`;
+    list.appendChild(row);
+  });
+  const total = CART.reduce((s,i)=>s + (i.price * i.qty),0);
+  document.getElementById('cartTotal').innerText = `Total: ₹${total}`;
+}
+
+function addToCart(item){ // item: {title,price}
+  const exists = CART.find(c=>c.title===item.title);
+  if(exists) exists.qty += 1; else CART.push({...item, qty:1});
+  saveCart();
+}
+
+function addToCartFromCard(evt, btn){
+  evt.preventDefault();
+  const card = btn.closest('.menu-card');
+  const itm = card && card.dataset.item ? JSON.parse(card.dataset.item) : null;
+  if(itm) addToCart({title:itm.title, price:itm.price});
+}
+
+function changeQty(idx, delta){ if(CART[idx]){ CART[idx].qty = Math.max(1, CART[idx].qty + delta); saveCart(); } }
+function removeCart(idx){ CART.splice(idx,1); saveCart(); }
+function clearCart(){ if(!confirm('Clear cart?')) return; CART = []; saveCart(); }
+
+/* Takeaway order persisted to localStorage / firestore */
+function placeTakeawayOrder(paymentId, method){
+  const orders = JSON.parse(localStorage.getItem('dd_takeaway')||'[]');
+  const order = { id: Date.now(), items: CART.slice(), total: CART.reduce((s,i)=>s + i.price*i.qty,0), date: new Date().toISOString(), paymentId, method };
+  orders.push(order);
+  localStorage.setItem('dd_takeaway', JSON.stringify(orders));
+  if(useFirestore && db){
+    db.collection('takeaway').add(order).catch(()=>{/* ignore */});
+  }
+  CART = []; saveCart();
+  renderTakeawayAdmin();
+  alert('Order placed! You can download the invoice now.');
+  generateInvoicePDF(order);
+}
+
+/* ------------------- Payment Integration (Razorpay demo) ------------------- */
+function checkoutWithRazorpay(){
+  const total = CART.reduce((s,i)=>s + i.price*i.qty,0);
+  if(total===0){ alert('Cart empty'); return; }
+  // Razorpay payment if key present
+  if(RAZORPAY_KEY_ID && RAZORPAY_KEY_ID !== 'RAZORPAY_KEY_ID'){
+    const options = {
+      key: RAZORPAY_KEY_ID,
+      amount: total * 100, // paise
+      currency: "INR",
+      name: "Dining Delights",
+      description: "Takeaway Order",
+      handler: function (response){
+        // response.razorpay_payment_id
+        placeTakeawayOrder(response.razorpay_payment_id, 'razorpay');
+      },
+      prefill: {name: (JSON.parse(localStorage.getItem('dd_profile')||'{}').name || ''), email: (JSON.parse(localStorage.getItem('dd_profile')||'{}').email || '')},
+      theme: {color: "#b06f4b"}
+    };
+    const rzp = new Razorpay(options);
+    rzp.open();
+  } else {
+    // Fallback: simulate a successful payment for demo purposes
+    if(confirm('Razorpay key not configured. Simulate successful payment?')) simulatePayment();
+  }
+}
+
+/* Simulated payment flow for demo/testing */
+function simulatePayment(){
+  const total = CART.reduce((s,i)=>s + i.price*i.qty,0);
+  if(total===0){ alert('Cart empty'); return; }
+  // mark order as paid via 'simulated' id
+  const fakeId = 'SIM-'+Date.now();
+  placeTakeawayOrder(fakeId, 'simulated');
+}
+
+/* ------------------- WhatsApp quick order ------------------- */
+function whatsappOrder(e,title,price){
+  e.preventDefault();
+  const phone = ''; // optional: put your restaurant number here in international without + (e.g. '9199xxxx')
+  const profile = JSON.parse(localStorage.getItem('dd_profile')||'{}');
+  const name = profile.name || '';
+  const msg = `Hi, I'd like to order: *${title}* (₹${price})\nName: ${name}\nPlease confirm pickup time.`;
+  const url = phone ? `https://wa.me/${phone}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+  window.open(url, '_blank');
+}
+
+/* ------------------- Invoice Generation (jsPDF) ------------------- */
+async function generateInvoicePDF(order){
+  // uses jspdf
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  doc.setFontSize(18); doc.text("Dining Delights", 14, 20);
+  doc.setFontSize(11); doc.text(`Invoice ID: ${order.id}`, 14, 30);
+  doc.text(`Date: ${new Date(order.date).toLocaleString()}`, 14, 36);
+  doc.text(`Payment: ${order.method} ${order.paymentId ? '• '+order.paymentId : ''}`, 14, 42);
+
+  let y = 56;
+  doc.setFontSize(12); doc.text("Items", 14, y); doc.text("Qty", 120, y); doc.text("Price", 150, y);
+  y += 6;
+  order.items.forEach(it=>{
+    doc.setFontSize(11);
+    doc.text(it.title, 14, y);
+    doc.text(String(it.qty), 120, y);
+    doc.text(`₹${it.price * it.qty}`, 150, y);
+    y += 8;
+    if(y > 270){ doc.addPage(); y = 20; }
+  });
+  y += 8;
+  doc.setFontSize(13);
+  doc.text(`Total: ₹${order.total}`, 14, y);
+  // save
+  doc.save(`invoice_${order.id}.pdf`);
+}
+
+/* helper to offer sample invoice for demo */
+function downloadInvoiceDemo(){
+  const sample = { id: 'SAMPLE-001', items: [{title:'Veg Biryani', price:220, qty:1},{title:'Gulab Jamun',price:120,qty:2}], total:460, date:new Date().toISOString(), method:'demo' };
+  generateInvoicePDF(sample);
+}
+
+/* ------------------- Reservations (quick + full) ------------------- */
+function handleQuickReserve(e){
+  e.preventDefault();
+  const phone = document.getElementById('qPhone').value.trim();
+  const date = document.getElementById('qDate').value;
+  const time = document.getElementById('qTime').value;
+  const guests = document.getElementById('qGuests').value;
+  const qMsg = document.getElementById('qMsg');
+  if(!phone || !date || !time){ qMsg.innerText = 'Please fill all fields.'; return; }
+  const reservation = { id: Date.now(), phone, date, time, guests };
+  saveReservationData(reservation);
+  qMsg.innerText = 'Reservation received!';
+  document.getElementById('quickReserveForm').reset();
+  renderReservations();
+}
+
+function handleReserve(e){
+  e.preventDefault();
+  const name = document.getElementById('name').value.trim();
+  const phone = document.getElementById('phone').value.trim();
+  const date = document.getElementById('date').value;
+  const time = document.getElementById('time').value;
+  const guests = document.getElementById('guests').value;
+  const foodType = document.getElementById('foodType').value;
+  const kids = document.getElementById('kids').value;
+  const occasion = document.getElementById('occasion').value;
+  const deals = document.getElementById('deals').value;
+  const requests = document.getElementById('requests').value.trim();
+  const reserveMsg = document.getElementById('reserveMsg');
+  if(!name||!phone||!date||!time){ reserveMsg.innerText='Please fill required fields.'; return; }
+  const reservation = { id: Date.now(), name, phone, date, time, guests, foodType, kids, occasion, deals, requests };
+  saveReservationData(reservation);
+  reserveMsg.innerText = 'Reservation submitted!';
+  document.getElementById('reserveForm').reset();
+  renderReservations();
+}
+
+/* save reservation to firestore if enabled, else localStorage */
+function saveReservationData(res){
+  // localStorage
+  const arr = JSON.parse(localStorage.getItem('dd_reservations')||'[]');
+  arr.push(res); localStorage.setItem('dd_reservations', JSON.stringify(arr));
+  // firestore
+  if(useFirestore && db){
+    db.collection('reservations').add(res).catch(()=>{/* ignore */});
+  }
+}
+
+/* render upcoming list */
+function renderReservations(){
+  const list = document.getElementById('upcomingList'); list.innerHTML='';
+  const reservations = JSON.parse(localStorage.getItem('dd_reservations')||'[]');
+  if(reservations.length===0){ list.innerHTML = "<div class='small-muted'>No reservations yet.</div>"; return; }
+  reservations.slice().reverse().forEach(r=>{
+    const el = document.createElement('div'); el.className='review';
+    el.innerHTML = `<div style="display:flex;justify-content:space-between;"><div><strong>${r.name||r.phone}</strong><div class="small-muted">${r.date || ''} • ${r.time || ''}</div></div><div class="small-muted">${r.guests || ''} guests</div></div>`;
+    list.appendChild(el);
+  });
+}
+
+/* ------------------- Reviews ------------------- */
+function handleReview(e){
+  e.preventDefault();
+  const name = document.getElementById('rName').value.trim();
+  const rating = parseInt(document.getElementById('rRating').value);
+  const msg = document.getElementById('rMsg').value.trim();
+  const review = { id: Date.now(), name, rating, msg, date: new Date().toISOString() };
+  // local
+  const reviews = JSON.parse(localStorage.getItem('dd_reviews')||'[]'); reviews.push(review); localStorage.setItem('dd_reviews', JSON.stringify(reviews));
+  // firestore
+  if(useFirestore && db){
+    db.collection('reviews').add(review).catch(()=>{/* ignore */});
+  }
+  document.getElementById('reviewForm').reset();
+  renderReviews();
+}
+function renderReviews(){
+  const list = document.getElementById('reviewsList'); list.innerHTML='';
+  const reviews = JSON.parse(localStorage.getItem('dd_reviews')||'[]');
+  if(reviews.length===0){ list.innerHTML = "<div class='small-muted'>No reviews yet.</div>"; return; }
+  reviews.slice().reverse().forEach(r=>{
+    const el = document.createElement('div'); el.className='review';
+    const stars = '★'.repeat(r.rating) + '☆'.repeat(5-r.rating);
+    el.innerHTML = `<div style="display:flex;justify-content:space-between;"><strong>${r.name}</strong><span style="color:var(--gold)">${stars}</span></div><div style="margin-top:8px;color:var(--muted)}">${r.msg}</div>`;
+    list.appendChild(el);
+  });
+}
+
+/* ------------------- Admin Dashboard (client-side) ------------------- */
+function openAdminLogin(){ document.getElementById('adminModal').style.display='flex'; document.getElementById('adminLoginView').style.display='block'; document.getElementById('adminDashView').style.display='none'; document.getElementById('adminPass').value=''; document.getElementById('adminLoginMsg').innerText=''; }
+function closeAdmin(){ document.getElementById('adminModal').style.display='none'; }
+function adminLogin(){
+  const pass = document.getElementById('adminPass').value;
+  if(pass === ADMIN_PASSWORD){
+    document.getElementById('adminLoginView').style.display='none';
+    document.getElementById('adminDashView').style.display='block';
+    loadAdminTables();
+  } else document.getElementById('adminLoginMsg').innerText = 'Wrong password.';
+}
+
+function showTab(tab){
+  document.getElementById('tab-reservations').style.display = (tab==='reservations') ? 'block':'none';
+  document.getElementById('tab-takeaway').style.display = (tab==='takeaway') ? 'block':'none';
+  document.getElementById('tab-reviews').style.display = (tab==='reviews') ? 'block':'none';
+  ['resTabBtn','takeTabBtn','revTabBtn'].forEach(id=>document.getElementById(id).classList.remove('active'));
+  if(tab==='reservations') document.getElementById('resTabBtn').classList.add('active');
+  if(tab==='takeaway') document.getElementById('takeTabBtn').classList.add('active');
+  if(tab==='reviews') document.getElementById('revTabBtn').classList.add('active');
+}
+
+function loadAdminTables(){
+  /* reservations */
+  const reservations = JSON.parse(localStorage.getItem('dd_reservations')||'[]');
+  const rBody = document.querySelector('#reservationsTable tbody'); rBody.innerHTML = '';
+  reservations.slice().reverse().forEach(r=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${r.name||r.phone||'—'}</td><td>${r.date||''} • ${r.time||''}</td><td>${r.guests||''}</td><td>${r.occasion||''}</td><td>${r.foodType||''}</td><td><button onclick="adminDelete('dd_reservations',${r.id})">Delete</button></td>`;
+    rBody.appendChild(tr);
+  });
+
+  /* takeaway */
+  const take = JSON.parse(localStorage.getItem('dd_takeaway')||'[]');
+  const tBody = document.querySelector('#takeawayTable tbody'); tBody.innerHTML = '';
+  take.slice().reverse().forEach(o=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${(o.items||[]).map(i=>i.title+' x'+i.qty).join(', ')||'—'}</td><td>₹${o.total||0}</td><td>${new Date(o.date||'').toLocaleString()}</td><td><button onclick="adminDelete('dd_takeaway',${o.id})">Delete</button></td>`;
+    tBody.appendChild(tr);
+  });
+
+  /* reviews */
+  const rev = JSON.parse(localStorage.getItem('dd_reviews')||'[]');
+  const vBody = document.querySelector('#reviewsTable tbody'); vBody.innerHTML = '';
+  rev.slice().reverse().forEach(r=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${r.name||'—'}</td><td>${'★'.repeat(r.rating)||''}</td><td>${r.msg||''}</td><td><button onclick="adminDelete('dd_reviews',${r.id})">Delete</button></td>`;
+    vBody.appendChild(tr);
+  });
+
+  showTab('reservations');
+}
+
+/* delete item */
+function adminDelete(key,id){
+  if(!confirm('Delete this item?')) return;
+  const arr = JSON.parse(localStorage.getItem(key)||'[]');
+  const filtered = arr.filter(it=>it.id !== id);
+  localStorage.setItem(key, JSON.stringify(filtered));
+  loadAdminTables(); renderReservations(); renderReviews(); renderTakeawayAdmin();
+}
+
+/* clear storage for a key */
+function clearStorageKey(key){
+  if(!confirm('Clear all data for this list?')) return;
+  localStorage.removeItem(key);
+  loadAdminTables(); renderReservations(); renderReviews(); renderTakeawayAdmin();
+}
+
+/* export CSV */
+function exportCSV(storageKey, filename){
+  const arr = JSON.parse(localStorage.getItem(storageKey)||'[]');
+  if(arr.length===0){ alert('Nothing to export'); return; }
+  const headers = Object.keys(arr[0]);
+  const rows = arr.map(o => headers.map(h => `"${(o[h]||'').toString().replace(/"/g,'""')}"`).join(','));
+  const csv = [headers.join(','), ...rows].join('\n');
+  downloadText(csv, filename);
+}
+function exportAllCSV(){ exportCSV('dd_reservations','reservations.csv'); exportCSV('dd_takeaway','takeaway.csv'); exportCSV('dd_reviews','reviews.csv'); }
+
+function downloadText(text, filename){
+  const blob = new Blob([text], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = filename || 'export.csv';
+  document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 200);
+}
+
+/* ------------------- Takeaway Admin render helper ------------------- */
+function renderTakeawayAdmin(){ // re-render admin's takeaway table if open
+  if(document.getElementById('adminModal').style.display !== 'flex') return;
+  loadAdminTables();
+}
+
+/* ------------------- Save takeaway order to storage (used inside placeTakeawayOrder) ------------------- */
+(function(){
+  // Initialize CART render & other renders
+  renderCart();
+  renderReservations();
+  renderReviews();
+  renderTakeawayAdmin();
+})();
+
+/* ------------------- utility: add to cart helper from button */ 
+function addToCartFromMenu(title,price){
+  addToCart({title,price});
+}
+
+/* ------------------- fallback / cleanup interactions ------------------- */
+document.getElementById('adminModal').addEventListener('click', function(e){ if(e.target === this) closeAdmin(); });
+
+/* helper to add from card when user clicks Add to Cart (if referencing button) */
+/* Small convenience: when clicking image area we could open modal — omitted for brevity */
+
+</script>
+</body>
+</html>
